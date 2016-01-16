@@ -6,7 +6,7 @@ trait LVar[D, T] {
 
   def put(x: T): this.type
 
-  def addHandler(xs: T*)(cb: T => Unit): this.type
+  def addHandler(threshold: D)(cb: T => Unit): this.type
 
   def freeze(): Lattice[D, T]
 }
