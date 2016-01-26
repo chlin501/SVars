@@ -4,13 +4,10 @@ import org.svars.Lattice
 
 class SetLattice[T] extends Lattice[Set[T], T] {
 
-  private var set = Set[T]().empty
+  override def add(store: Set[T], element: T): Set[T] = store + element
 
-  override def get: Set[T] = set
+  override def <(lhs: Set[T], rhs: Set[T]): Boolean = lhs.size < rhs.size
 
-  override def += (v: T): Unit = synchronized {
-    set = set + v
-  }
+  override val empty: Set[T] = Set.empty
 
-  override def < (v: Set[T]): Boolean = set.size < v.size
 }

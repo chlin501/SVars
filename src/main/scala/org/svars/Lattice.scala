@@ -2,10 +2,10 @@ package org.svars
 
 trait Lattice[D, T] {
 
-  def get: D
+  def add(store: D, element: T): D
 
-  def += (v: T): Unit
+  def <(lhs: D, rhs: D): Boolean
 
-  def < (v: D): Boolean
+  val empty: D
 
 }
