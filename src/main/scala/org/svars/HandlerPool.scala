@@ -2,34 +2,18 @@ package org.svars
 
 import collection.mutable.{ Queue, ArrayBuffer }
 
-import concurrent.{ Future, ExecutionContext }
+import concurrent.{ Future, ExecutionContext, blocking }
 
 import java.util.concurrent.atomic.AtomicInteger
 
-case class HandlerPool[D, T](lattice: Lattice[D, T])(implicit executionContext: ExecutionContext) {
+trait HandlerPool[D, T] {
 
-  val QuiesceSleepingMilliseconds = 50
+  def quiesce(function: => D): Future[D]
 
-  val runningTasks = new AtomicInteger()
+  def addHandler(xs: Set[D], cb: D => Unit, history: Set[D]): Unit
 
-  val handlerQueue = new Queue[Tuple2[Seq[D], Function1[T, Unit]]]()
+  def processNewElement(store: D): Unit
 
-  def quiesce = while (runningTasks.get != 0) Thread.sleep(QuiesceSleepingMilliseconds)
-
-  def addHandler(xs: Set[D], cb: T => Unit): Unit = handlerQueue.synchronized {
-    handlerQueue += ((xs, cb))
-  }
-
-  def handleElement(store: D, element: T) = handlerQueue.foreach { case(limits, function) =>
-    limits.foreach { limit =>
-      if (lattice.<(limit, store)) {
-        Future {
-          runningTasks.incrementAndGet
-          function(element) // ????
-          runningTasks.decrementAndGet
-        }
-      }
-    }
-  }
+  def postFuture(function: => Unit): Unit
 
 }
