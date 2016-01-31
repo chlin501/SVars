@@ -8,34 +8,40 @@ import java.util.concurrent.atomic.AtomicInteger
 
 case class HandlerPoolImpl[D, T](lattice: Lattice[D, T])(implicit executionContext: ExecutionContext) extends HandlerPool[D, T] {
 
-  val runningFutures = new AtomicInteger()
+  val runningPuts = new AtomicInteger()
 
   val handlerQueue = new Queue[Tuple2[Set[D], Function1[D, Unit]]]()
 
   override def quiesce(function: => D): Future[D] = Future {
     blocking {
-      while (runningFutures.get != 0) { }
-      function
+      do {
+        while (runningPuts.get != -1 && runningPuts.get != 0) { }
+      } while (runningPuts.get != -1 && !runningPuts.compareAndSet(0, -1))
+      // Is this cheating? Shouldn't be?
     }
+
+    function
   }
 
   override def addHandler(xs: Set[D], cb: D => Unit): Unit = handlerQueue.synchronized {
     handlerQueue += ((xs, cb))
   }
 
-  override def handleElement(store: D) = handlerQueue.foreach { case(limits, function) =>
+  override def processElement(store: D) = handlerQueue.foreach { case(limits, function) =>
     limits.foreach { limit =>
-      if (lattice < (limit, store)) postFuture(() => function(limit))
+      if (lattice < (limit, store)) Future { function(limit) }
     }
   }
 
-  override def postFuture(function: => Unit) = Future {
-    try {
-      runningFutures.incrementAndGet
-      function
-    } finally {
-      runningFutures.decrementAndGet
-    }
-  }
+  override def doPut(function: => Unit): Unit = Future {
+    if (runningPuts.get != -1) {
+      try {
+        runningPuts.incrementAndGet
+        function
+      } finally {
+        runningPuts.decrementAndGet
+      }
+    } else throw LVarFrozenException()
+  }.onFailure { case t => throw t }
 
 }

@@ -1,45 +1,50 @@
 package org.svars
 
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.{ AtomicReference, AtomicBoolean }
 
 import concurrent.Future
 
 class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T]) {
 
-  @volatile private var frozen = false
+  private val data = new AtomicReference(lattice.empty)
 
-  @volatile private var data = new AtomicReference(lattice.empty)
+  private val store = new LVarStore[D]()
 
-  def put(v: T): this.type = {
-    if (frozen) throw LVarFrozenException(this)
+  // LVish paper gives a quite complicated explanation
+  // about races between the put calls, get calls and freeze calls.
+  // However since no get call is going to be implemented, all
+  // complications belonging to races are removed.
+  def put(element: T): this.type = {
 
-    handlerPool.postFuture { internalPut(v) }
+    handlerPool.doPut {
+      var success = false
+      var alreadyAdded = false
+      var joined: D = lattice.empty
+
+      do {
+        val dataReference = data.get
+
+        joined = lattice.add(dataReference, element)
+        alreadyAdded = dataReference == joined
+
+        success = alreadyAdded || data.compareAndSet(dataReference, joined)
+
+      } while (!success)
+
+      if (!alreadyAdded) {
+        store.add(joined)
+        handlerPool.processElement(joined)
+      }
+    }
 
     this
   }
 
-  private def internalPut(v: T): Unit = {
-    var success = false
-    var alreadyAdded = false
-    var joined: D = lattice.empty
-
-    do {
-      val fetchedData = data.get
-
-      joined = lattice.add(fetchedData, v)
-      alreadyAdded = fetchedData == joined
-
-      success = alreadyAdded || data.compareAndSet(fetchedData, joined)
-
-    } while (!success)
-
-    if (!alreadyAdded) handlerPool.processNewElement(joined)
-  }
-
+  // ??? weird
   def addHandler(xs: Set[D])(cb: D => Unit): this.type = {
-    if (frozen) throw LVarFrozenException(this)
+    handlerPool.addHandler(xs, cb)
 
-    handlerPool.addHandler(xs, cb, history)
+    this
   }
 
   // Races between this call and new calls to the method put is
@@ -47,7 +52,6 @@ class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T])
   // This is how the LVish paper solves it. Check page 7 of here:
   // http://www.cs.indiana.edu/l/www/ftp/techreports/TR710.pdf
   def freeze(): Future[D] = handlerPool.quiesce {
-    frozen = true
     data.get
   }
 

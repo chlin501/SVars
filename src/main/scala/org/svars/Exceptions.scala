@@ -1,7 +1,7 @@
 package org.svars
 
-final case class LVarFrozenException[D, T](lvar: LVar[D, T]) extends IllegalStateException(
-  s"LVar $lvar has already been frozen!"
+final case class LVarFrozenException[D, T]() extends IllegalStateException(
+  s"LVar frozen!"
 )
 
 final case class LVarLatticeViolationException[D, T](store: D, element: T) extends IllegalStateException(
