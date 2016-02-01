@@ -6,6 +6,8 @@ import concurrent.Future
 
 class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T]) {
 
+  private val frozen = new AtomicBoolean()
+
   private val data = new AtomicReference(lattice.empty)
 
   private val store = new LVarStore[D]()
@@ -32,6 +34,7 @@ class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T])
       } while (!success)
 
       if (!alreadyAdded) {
+        if (frozen.get) throw LVarFrozenException()
         store.add(joined)
         handlerPool.processElement(joined)
       }
@@ -52,6 +55,7 @@ class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T])
   // This is how the LVish paper solves it. Check page 7 of here:
   // http://www.cs.indiana.edu/l/www/ftp/techreports/TR710.pdf
   def freeze(): Future[D] = handlerPool.quiesce {
+    frozen.set(true)
     data.get
   }
 

@@ -13,13 +13,7 @@ case class HandlerPoolImpl[D, T](lattice: Lattice[D, T])(implicit executionConte
   val handlerQueue = new Queue[Tuple2[Set[D], Function1[D, Unit]]]()
 
   override def quiesce(function: => D): Future[D] = Future {
-    blocking {
-      do {
-        while (runningPuts.get != -1 && runningPuts.get != 0) { }
-      } while (runningPuts.get != -1 && !runningPuts.compareAndSet(0, -1))
-      // Is this cheating? Shouldn't be?
-    }
-
+    blocking { while (runningPuts.get != 0) { } }
     function
   }
 
@@ -34,14 +28,12 @@ case class HandlerPoolImpl[D, T](lattice: Lattice[D, T])(implicit executionConte
   }
 
   override def doPut(function: => Unit): Unit = Future {
-    if (runningPuts.get != -1) {
-      try {
-        runningPuts.incrementAndGet
-        function
-      } finally {
-        runningPuts.decrementAndGet
-      }
-    } else throw LVarFrozenException()
+    runningPuts.incrementAndGet
+    try {
+      function
+    } finally {
+      runningPuts.decrementAndGet
+    }
   }.onFailure { case t => throw t }
 
 }
