@@ -1,10 +1,23 @@
 package org.svars
 
-class CallbackHandler[D](val store: LVarStore[D], val callback: D => Unit) {
+import java.util.concurrent.atomic.AtomicReference
 
-  private var myPosition = 0
+class CallbackHandler[D, T](val thresholdSet: Set[D], val lattice: Lattice[D, T], val callback: D => Unit) {
 
-  def tick(limit: Int): Unit = {
+  private val threshold = new AtomicReference(thresholdSet.toList.sortWith((a, b) => lattice < (a, b)))
 
+  def tick(state: D): Unit = {
+    var stop = false
+
+    while (!stop) {
+      val list = threshold.get
+
+      list match {
+        case head :: tail if lattice < (head, state) && threshold.compareAndSet(list, tail) =>
+          callback(head)
+        case _ =>
+          stop = true
+      }
+    }
   }
 }

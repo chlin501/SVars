@@ -10,7 +10,7 @@ class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T])
 
   private val data = new AtomicReference(lattice.empty)
 
-  private val store = new LVarStore[D]()
+  private val callbacks = new AtomicReference(Set[CallbackHandler[D, T]]().empty)
 
   def put(element: T): this.type = {
 
@@ -28,8 +28,8 @@ class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T])
         if (success) {
           if (frozen.get) throw LVarFrozenException()
 
-          if (!alreadyAdded) {
-            store.add(joined)
+          if (!alreadyAdded) callbacks.get.foreach { cb =>
+            cb.tick(joined)
           }
         }
 
@@ -41,11 +41,16 @@ class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T])
 
   def addHandler(xs: Set[D])(cb: D => Unit): this.type = {
 
-    val callback = (s: D) => {
-      xs.foreach { x =>
-        if (lattice < (x, s)) handlerPool.doFuture { cb(x) }
-      }
-    }
+    val callbackHandler = new CallbackHandler(xs, lattice, cb)
+
+    var success = false
+
+    do {
+      val cbs = callbacks.get
+      success = callbacks.compareAndSet(cbs, cbs + callbackHandler)
+    } while (!success)
+
+    callbackHandler.tick(data.get)
 
     this
   }
