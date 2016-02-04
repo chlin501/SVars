@@ -12,31 +12,26 @@ class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T])
 
   private val callbacks = new AtomicReference(Set[CallbackHandler[D, T]]().empty)
 
-  def put(element: T): this.type = {
+  def put(element: T): Future[Unit] = handlerPool.doPut {
+    var success = false
 
-    handlerPool.doPut {
-      var success = false
+    do {
+      val dataReference = data.get
 
-      do {
-        val dataReference = data.get
+      val joined = lattice.add(dataReference, element)
+      val alreadyAdded = dataReference == joined
 
-        val joined = lattice.add(dataReference, element)
-        val alreadyAdded = dataReference == joined
+      success = alreadyAdded || data.compareAndSet(dataReference, joined)
 
-        success = alreadyAdded || data.compareAndSet(dataReference, joined)
+      if (success) {
+        if (frozen.get) throw LVarFrozenException()
 
-        if (success) {
-          if (frozen.get) throw LVarFrozenException()
-
-          if (!alreadyAdded) callbacks.get.foreach { cb =>
-            cb.tick(joined)
-          }
+        if (!alreadyAdded) callbacks.get.foreach { cb =>
+          handlerPool.doFuture { cb.tick(joined) }
         }
+      }
 
-      } while (!success)
-    }
-
-    this
+    } while (!success)
   }
 
   def addHandler(xs: Set[D])(cb: D => Unit): this.type = {
@@ -64,6 +59,12 @@ class LVar[D, T](val lattice: Lattice[D, T], val handlerPool: HandlerPool[D, T])
 
 object LVar {
 
-  def apply[D, T](lattice: Lattice[D, T]): LVar[D, T] = new LVar[D, T](lattice, ???)
+  def apply[D, T](lattice: Lattice[D, T], handlerPool: HandlerPool[D, T]): LVar[D, T] =
+    new LVar[D, T](lattice, handlerPool)
+
+  def withDefaultHandlerPool[D, T](lattice: Lattice[D, T]): LVar[D, T] = {
+    implicit val ec = concurrent.ExecutionContext.Implicits.global
+    LVar(lattice, new HandlerPoolImpl(lattice))
+  }
 
 }
