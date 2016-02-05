@@ -13,7 +13,7 @@ The handler pool interface can be found at `org.svars.HandlerPool[D, T]` and has
 ### Examples
 Here are a few examples:
 
-```
+```scala
 val lvar = LVar.withDefaultHandlerPool(new SetLattice[Int])
 
 // Takes the lattice from the empty set to Set(1)
